@@ -1,6 +1,6 @@
 // Rede primeiro (sempre a versao nova quando tem internet); sem internet, abre a ultima copia salva.
 // O servidor (Apps Script) nunca passa por aqui: so os arquivos da tela.
-var CACHE = 'casal-v1';
+var CACHE = 'casal-v2';
 var ARQS = ['./', 'index.html', 'app.js', 'motor.js', 'divisao.js', 'operacoes.js', 'config.js', 'manifest.json', 'icon-192.png'];
 self.addEventListener('install', function (e) { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ARQS); })); });
 self.addEventListener('activate', function (e) {

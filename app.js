@@ -8,7 +8,7 @@
   var MES_CURTO = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
   var SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
-  var S = { token: null, pessoa: null, servidor: null, versao: 0, fila: [], estado: null, historico: [], aba: 'mes', mes: null, simular: false, calc: null, enviando: false, erroRede: false };
+  var S = { token: null, pessoa: null, servidor: null, versao: 0, fila: [], estado: null, historico: [], aba: 'mes', mes: null, simular: false, modoConta: 'casa', calc: null, enviando: false, erroRede: false };
   var $ = function (id) { return document.getElementById(id); };
 
   // ---------- utilidades ----------
@@ -289,14 +289,16 @@
         '<p class="small">Só muda os meses em que o gasto por fora dela ainda não foi informado.</p>');
     }
     out.push('</section>');
+    out.push(graficoLivre());
     var avisos = [];
+    if (S.estado.divisao.aluguel && !X.casa.aluguel) avisos.push('<p>' + nomeMes(m) + ' é um mês <b>sem aluguel</b>: o boleto do apê é de só ' + brl(X.casa.boleto) + '. Por isso a parte de cada um na casa é pequena.</p>');
     if (X.heleno.empresta > 0) avisos.push('<p>Faltaram <b>' + brl(X.heleno.empresta) + '</b> para o cartão da Ma: o Heleno paga e ela passa a dever.</p>');
     if (X.falta > 0) avisos.push('<p>Faltaram <b>' + brl(X.falta) + '</b> da parte dela nas contas: o Heleno cobre (não vira dívida).</p>');
     if (X.ma.divida < X.parcela) avisos.push('<p>A dívida recebeu <b>' + brl(X.ma.divida) + '</b> de ' + brl(X.parcela) + '. O resto atrasa.</p>');
     if (avisos.length) out.push('<div class="alerta">' + avisos.join('') + '</div>');
     function row(k, v, cls) { return '<div class="' + (cls || '') + '"><dt>' + k + '</dt><dd class="num">' + v + '</dd></div>'; }
     var fat = Object.keys(X.heleno.faturas).map(function (id) { var r = regra(id); return row(' · ' + esc(r ? r.nome : id) + (id === S.estado.divisao.cartaoMa ? ' (parte dele)' : ''), '− ' + brl(X.heleno.faturas[id])); }).join('');
-    out.push('<div class="pessoas">' +
+    var cards = { ma:
       '<div class="card"><h3 style="color:var(--ma)">Ma</h3><div><div class="big num ' + (X.ma.fica > 0 ? 'pos' : '') + '">' + brl(X.ma.fica) + '</div><span class="small">fica livre</span></div><dl class="rows">' +
       row('Recebe (salário + pai)', '+ ' + brl(X.ma.entra)) +
       (X.ma.porFora ? row('Gastos por fora' + (X.ma.porForaInformado ? '' : ' (simulado)'), '− ' + brl(X.ma.porFora)) : '') +
@@ -304,7 +306,7 @@
       row('2. Cartão dela' + (X.ma.cartaoEstimado ? ' (estimado)' : ''), '− ' + brl(X.ma.cartao) + (X.ma.cartao < X.ma.cartaoCheio ? ' de ' + brl(X.ma.cartaoCheio) : ''), X.ma.cartao < X.ma.cartaoCheio ? 'warn' : '') +
       row('3. Água, luz e internet', '− ' + brl(X.ma.outras)) +
       row('4. Dívida', '− ' + brl(X.ma.divida), X.ma.divida < X.parcela ? 'warn' : '') +
-      row('Fica livre', brl(X.ma.fica), 'tot') + '</dl></div>' +
+      row('Fica livre', brl(X.ma.fica), 'tot') + '</dl></div>', heleno:
       '<div class="card"><h3 style="color:var(--heleno)">Heleno</h3><div><div class="big num ' + (X.heleno.fica >= 0 ? 'pos' : 'neg') + '">' + brl(X.heleno.fica) + '</div><span class="small">fica livre</span></div><dl class="rows">' +
       row('Recebe (salários)', '+ ' + brl(X.heleno.entra)) +
       (X.heleno.divida ? row('Dívida que a Ma pagou', '+ ' + brl(X.heleno.divida)) : '') +
@@ -313,15 +315,113 @@
       row('Parte dele da casa', '− ' + brl(X.heleno.casaParte)) +
       (X.heleno.cobre ? row('Cobre a Ma nas contas', '− ' + brl(X.heleno.cobre), 'warn') : '') +
       (X.heleno.empresta ? row('Paga o cartão da Ma (ela deve)', '− ' + brl(X.heleno.empresta), 'warn') : '') +
-      row('Fica livre', brl(X.heleno.fica), 'tot') + '</dl></div></div>');
+      row('Fica livre', brl(X.heleno.fica), 'tot') + '</dl></div>' };
+    // quem esta usando ve primeiro o proprio quadro
+    out.push('<div class="pessoas">' + (S.pessoa === 'ma' ? cards.ma + cards.heleno : cards.heleno + cards.ma) + '</div>');
+    out.push(cartaoCasa(X));
     var pix = eventosPix(d, X);
     out.push('<section class="sec"><h2>Pix da Ma para o Heleno</h2><div class="dias">' + (pix.length ? pix.map(function (x) {
       return '<div class="dia"><div class="dia-h"><span class="data">' + ddmm(x.data) + '<small>' + semana(x.data) + '</small></span><span class="saldo num">' + brl(x.valor) + '</span></div></div>';
     }).join('') : '<div class="dia">Nada a repassar neste mês.</div>') + '</div><p class="small">Ele paga as contas e o cartão da conta dele; ela repassa a parte dela nesses dias.</p></section>');
+    out.push(contaDaCasa(X));
     out.push('<section class="sec"><h2>Acumulado até ' + nomeMes(m).toLowerCase() + '</h2><div class="tiles">' +
       tile('Ma deve do cartão', brl0(X.devendo), 'o Heleno pagou por ela', X.devendo > 0 ? 'neg' : '') +
       tile('Dívida atrasada', brl0(X.atraso), 'parcela de ' + brl0(X.parcela) + '/mês', X.atraso > 0 ? 'neg' : '') + '</div></section>');
     return out.join('');
+  }
+
+  function pct(v, total) { return total > 0 ? Math.round(v / total * 100) + '%' : '—'; }
+  function barra(partes, total) {
+    return '<div class="bar" aria-hidden="true">' + partes.filter(function (p) { return p.v > 0.005; }).map(function (p) {
+      return '<span style="flex-grow:' + (p.v / total) + ';background:' + p.c + '"></span>';
+    }).join('') + '</div>';
+  }
+  function quemTxt(p) { return p === S.pessoa ? 'Você' : (p === 'ma' ? 'A Ma' : 'O Heleno'); }
+
+  // quanto fica livre para cada um, mes a mes (toque num mes para ver o detalhe)
+  function graficoLivre() {
+    var C = calc(), i0 = Math.max(0, Math.min(C.meses.indexOf(C.mHoje) - 1, C.meses.length - 5)), ms = C.meses.slice(i0, i0 + 5), dv = C.div.slice(i0, i0 + 5);
+    var W = 400, H = 240, L = 8, R = 8, T = 30, B = 34, max = 0, min = 0;
+    dv.forEach(function (x) { max = Math.max(max, x.ma.fica, x.heleno.fica); min = Math.min(min, x.ma.fica, x.heleno.fica); });
+    if (max === min) max = 1;
+    var topo = min < 0 ? T : T, base = H - B - (min < 0 ? 16 : 0), Y = function (v) { return topo + (max - v) / (max - min) * (base - topo); };
+    var slot = (W - L - R) / ms.length, bw = Math.min(28, slot * 0.3), z = Y(0);
+    var grupos = ms.map(function (m, i) {
+      var x0 = L + slot * i, cx = x0 + slot / 2, x = dv[i], sel = m === S.mes;
+      var barras = [{ v: x.ma.fica, c: 'var(--ma)', x: cx - bw - 3, tx: cx - 3, a: 'end' }, { v: x.heleno.fica, c: 'var(--heleno)', x: cx + 3, tx: cx + 3, a: 'start' }].map(function (b) {
+        var y = Y(b.v), h = Math.max(2, Math.abs(y - z)), cima = b.v >= 0;
+        return '<rect x="' + b.x.toFixed(1) + '" y="' + (cima ? z - h : z).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="4" fill="' + (cima ? b.c : 'var(--out)') + '"/>' +
+          '<text x="' + b.tx.toFixed(1) + '" y="' + (cima ? z - h - 7 : z + h + 13).toFixed(1) + '" text-anchor="' + b.a + '" font-size="12" font-weight="700" fill="var(--text)">' + brl0(b.v).replace('R$ ', '') + '</text>';
+      }).join('');
+      return (sel ? '<rect x="' + (x0 + 4).toFixed(1) + '" y="4" width="' + (slot - 8).toFixed(1) + '" height="' + (H - 8) + '" rx="10" fill="var(--surface2)"/>' : '') + barras +
+        '<text x="' + cx.toFixed(1) + '" y="' + (H - 14) + '" text-anchor="middle" font-size="14" font-weight="700" fill="' + (sel ? 'var(--text)' : 'var(--muted)') + '">' + curtoMes(m) + '</text>' +
+        '<rect data-mes="' + m + '" x="' + x0.toFixed(1) + '" y="0" width="' + slot.toFixed(1) + '" height="' + H + '" fill="transparent"><title>' + nomeMes(m) + ': Ma ' + brl0(x.ma.fica) + ', Heleno ' + brl0(x.heleno.fica) + '</title></rect>';
+    }).join('');
+    return '<section class="sec"><h2>Quanto fica livre, mês a mês</h2><div class="card livre">' +
+      '<div class="lg"><span><i class="quem" style="background:var(--ma)"></i>Ma</span><span><i class="quem" style="background:var(--heleno)"></i>Heleno</span></div>' +
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Quanto fica livre para a Ma e para o Heleno em cada mês">' +
+      '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + z.toFixed(1) + '" y2="' + z.toFixed(1) + '" stroke="var(--line)"/>' + grupos + '</svg>' +
+      '<p class="small">Livre = o que sobra depois da casa, do cartão e da dívida. É daqui que saem as compras novas. Mercado e restaurante ficam de fora (VR/VA). Toque num mês para ver o detalhe.</p></div></section>';
+  }
+
+  // contas da casa: quem paga quanto, em reais e em porcentagem
+  function cartaoCasa(X) {
+    var D = S.estado.divisao, maPaga = Math.round((X.ma.boleto + X.ma.outras) * 100) / 100, hPaga = Math.max(0, Math.round((X.casaTotal - maPaga) * 100) / 100);
+    var combMa = Math.min(X.parte.ma, X.casaTotal), combH = Math.max(0, X.parte.heleno);
+    var fora = S.estado.regras.filter(function (r) { return r.casa && r.id !== D.boleto && D.outras.indexOf(r.id) < 0; }).map(function (r) { return esc(r.nome); });
+    if (!(X.casaTotal > 0)) return '';
+    function row(k, v, cls, cor) { return '<div class="' + (cls || '') + '"><dt>' + (cor ? '<i class="quem" style="background:' + cor + '"></i>' : '') + k + '</dt><dd class="num">' + v + '</dd></div>'; }
+    var rb = regra(D.boleto);
+    var itens = row(esc(rb ? rb.nome : 'Boleto do apê'), brl(X.casa.boleto)) + D.outras.map(function (id) {
+      var r = regra(id); return X.casa.itens[id] ? row(esc(r ? r.nome : id), brl(X.casa.itens[id])) : '';
+    }).join('');
+    return '<section class="sec"><h2>Contas da casa</h2><div class="card"><div><div class="big num">' + brl(X.casaTotal) + '</div><span class="small">contas da casa em ' + nomeMes(S.mes).toLowerCase() + '</span></div>' +
+      barra([{ v: maPaga, c: 'var(--ma)' }, { v: hPaga, c: 'var(--heleno)' }], X.casaTotal) +
+      '<dl class="rows">' + itens +
+      row('Ma paga (' + pct(maPaga, X.casaTotal) + ')', brl(maPaga), 'tot', 'var(--ma)') +
+      row('Heleno paga (' + pct(hPaga, X.casaTotal) + ')', brl(hPaga), '', 'var(--heleno)') + '</dl>' +
+      '<p class="small">Pelo combinado: ' + pct(combMa, X.casaTotal) + ' dela e ' + pct(combH, X.casaTotal) + ' dele.' + (X.ma.entra > 0 && X.heleno.entra > 0 ? ' Isso é ' +
+      pct(combMa, X.ma.entra) + ' da renda dela e ' + pct(combH, X.heleno.entra) + ' da dele.' : '') + '</p>' +
+      (fora.length ? '<p class="small">Aqui entram só o boleto do apê e as contas divididas pelo combinado. ' + fora.join(', ') + ' não ' + (fora.length > 1 ? 'entram' : 'entra') + ' nesta divisão.</p>' : '') + '</div></section>';
+  }
+
+  // simulacao: uma conta so da casa, para onde cada um manda a sua parte
+  function contaDaCasa(X) {
+    var comFat = S.modoConta === 'fat', ct = !X.conta ? { total: 0 } : comFat ? X.conta.fat : X.conta.casa, mesTxt = nomeMes(S.mes).toLowerCase();
+    if (!X.conta || !(ct.total > 0)) return '';
+    function row(k, v, cor, cls) { return '<div class="' + (cls || '') + '"><dt><i class="quem" style="background:' + cor + '"></i>' + k + '</dt><dd class="num">' + v + '</dd></div>'; }
+    function nomeRegra(id) { var r = id && regra(id); return r ? r.nome : ''; }
+    var detalhe = !comFat ? '' : '<dl class="rows">' +
+      row('Ma: casa', brl(X.conta.casa.ma), 'var(--ma)') +
+      row('Ma: cartão dela (o que ela alcança)', brl(X.ma.cartao), 'var(--ma)') +
+      row('Heleno: casa', brl(X.conta.casa.heleno), 'var(--heleno)') +
+      row('Heleno: cartões dele', brl(X.heleno.cartoes), 'var(--heleno)') +
+      (X.heleno.empresta > 0 ? row('Heleno: o que falta do cartão dela', brl(X.heleno.empresta), 'var(--warn)', 'warn') : '') + '</dl>';
+    var extrato = ct.extrato.map(function (x) {
+      var t, s = nomeRegra(x.regra);
+      if (x.quem === 'ma') { t = x.n > 1 ? 'A Ma completa a parte dela' : 'A Ma manda a parte dela'; s = s ? 'quando entra: ' + s : ''; }
+      else if (x.quem === 'heleno') { t = 'O Heleno manda ' + (ct.depositos.heleno > 1 ? (x.n === ct.depositos.heleno ? 'o resto da parte dele' : 'uma parte adiantada') : 'a parte dele'); s = (s ? 'quando entra: ' + s : '') + (x.naoCabe ? ' · não cabe nesse salário' : ''); }
+      else { t = 'Sai: ' + (s || 'conta'); s = ''; }
+      return '<li><span class="d num">' + ddmm(x.d) + '</span><span>' + esc(t) + (s ? '<span class="s">' + esc(s) + '</span>' : '') + '<span class="s num">saldo da conta: ' + brl(x.saldo) + '</span></span>' +
+        '<span class="v num ' + (x.v > 0 ? 'pos' : '') + '">' + (x.v > 0 ? '+ ' : '− ') + brl(Math.abs(x.v)) + '</span></li>';
+    }).join('');
+    var pixMa = Math.round((comFat ? X.ma.divida : X.ma.cartao + X.ma.divida) * 100) / 100, cedo = null;
+    ct.extrato.forEach(function (x) { if (!cedo && x.quem === 'heleno' && ct.depositos.heleno > 1) cedo = x; });
+    return '<section class="sec"><h2>Se a casa tivesse uma conta só dela</h2>' +
+      '<p class="small">Simulação: essa conta não existe. Seria uma conta separada, que começa o mês zerada, para onde cada um manda a sua parte. Escolha o que sai dela.</p>' +
+      '<div class="seg" role="group" aria-label="O que passa pela conta da casa"><button type="button" data-conta="casa" aria-pressed="' + !comFat + '">Só contas da casa</button>' +
+      '<button type="button" data-conta="fat" aria-pressed="' + comFat + '">Contas + faturas</button></div>' +
+      '<div class="card"><div class="duo">' +
+      '<div><span class="k"><i class="quem" style="background:var(--ma)"></i>' + quemTxt('ma') + ' manda</span><span class="v num">' + brl(ct.ma) + '</span><span class="small">' + pct(ct.ma, ct.total) + ' da conta</span></div>' +
+      '<div><span class="k"><i class="quem" style="background:var(--heleno)"></i>' + quemTxt('heleno') + ' manda</span><span class="v num">' + brl(ct.heleno) + '</span><span class="small">' + pct(ct.heleno, ct.total) + ' da conta</span></div></div>' +
+      barra([{ v: ct.ma, c: 'var(--ma)' }, { v: ct.heleno, c: 'var(--heleno)' }], ct.total) +
+      '<p class="small">Total que a conta precisa em ' + mesTxt + ': <b class="num">' + brl(ct.total) + '</b>.' +
+      (X.falta > 0 ? ' Nas contas da casa o combinado seria ' + brl(X.parte.ma) + ' dela e ' + brl(X.parte.heleno) + ' dele, mas a renda da Ma não alcança ' + brl(X.falta) + ' neste mês, e esse valor entra no depósito do Heleno.' : (comFat || ct.ma !== X.parte.ma ? '' : ' É a divisão combinada.')) + '</p>' +
+      (ct.negativo ? '<div class="alerta"><p><b>Faltaria saldo na conta em ' + ddmm(ct.negativo) + ':</b> uma saída vem antes do depósito que paga por ela.</p></div>' : '') +
+      detalhe + '<ul class="extrato" aria-label="Extrato da conta da casa">' + extrato + '</ul>' +
+      (cedo ? '<p class="small"><b>Atenção à data:</b> o Heleno manda ' + brl(cedo.v) + ' já em ' + ddmm(cedo.d) + ', porque a conta precisa desse dinheiro antes do salário seguinte dele' + (cedo.naoCabe ? ' (<b>não cabe nesse salário</b>)' : '') + '.</p>' : '') +
+      '<p class="small">A conta termina o mês zerada: entra exatamente o que sai, sem folga. Se uma conta vier acima do previsto' + (comFat ? ', ou se entrar compra nova no cartão' : '') + ', falta dinheiro nela.</p>' +
+      '<p class="small">Com essa conta, o Pix da Ma direto para o Heleno cairia para ' + brl(pixMa) + (comFat ? ' (só a dívida)' : ' (cartão dela + dívida)') + '. O que fica livre para cada um não muda.</p></div></section>';
   }
 
   function telaHistorico() {
@@ -529,8 +629,10 @@
 
   // ---------- eventos (delegados: um ouvinte para a tela toda) ----------
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('button, rect[data-dia]');
+    var t = ev.target.closest('button, rect[data-dia], rect[data-mes]');
     if (!t) return;
+    if (t.hasAttribute('data-conta')) { S.modoConta = t.getAttribute('data-conta'); render(); return; }
+    if (t.tagName.toLowerCase() === 'rect' && t.hasAttribute('data-mes')) { S.mes = t.getAttribute('data-mes'); render(); centralizaMes(); return; }
     if (t.hasAttribute('data-p')) return escolher(t.getAttribute('data-p'));
     if (t.hasAttribute('data-k')) return tecla(t.getAttribute('data-k'));
     if (t.hasAttribute('data-trocar')) { L.pessoa = null; return telaLogin(); }
